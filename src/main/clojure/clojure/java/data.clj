@@ -61,10 +61,23 @@
       (assoc the-map (keyword name) (make-setter-fn method))
       the-map)))
 
+(defn- add-array-methods [acls]
+  (let [cls (.getComponentType acls)
+        to (fn [_ sequence] (into-array cls (map (partial to-java cls)
+                                                sequence)))
+        from (fn [obj] (map from-java obj))]
+    (.addMethod to-java [acls Iterable] to)
+    (.addMethod from-java acls from)
+    {:to to :from from}))
 
 ;; common to-java definitions
 
-(defmethod to-java :default [_ value] value)
+(defmethod to-java :default [^Class cls value]
+  (if (.isArray cls)
+                                        ; no method for this array type yet
+    ((:to (add-array-methods cls))
+     cls value)
+    value))
 
 (defmethod to-java [Enum String] [enum value]
            (.invoke (.getDeclaredMethod enum "valueOf" (into-array [String])) nil (into-array [value])))
@@ -92,11 +105,14 @@
 
 ;; common from-java definitions
 
-(defmethod from-java Object [instance]
+(defmethod from-java :default [^Object instance]
   "Convert a Java object to a Clojure map"
-  (let [clazz (.getClass instance)
-        getter-map (reduce add-getter-fn {} (get-property-descriptors clazz))]
-    (into {} (for [[key getter-fn] (seq getter-map)] [key (getter-fn instance)]))))
+  (let [clazz (.getClass instance)]
+    (if (.isArray clazz)
+      ((:from (add-array-methods clazz))
+       instance)
+      (let [getter-map (reduce add-getter-fn {} (get-property-descriptors clazz))]
+        (into {} (for [[key getter-fn] (seq getter-map)] [key (getter-fn instance)]))))))
 
 
 (doseq [clazz [String Character Byte Short Integer Long Float Double Boolean BigInteger BigDecimal]]
