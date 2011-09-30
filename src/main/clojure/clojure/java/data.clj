@@ -118,6 +118,26 @@
 (doseq [clazz [String Character Byte Short Integer Long Float Double Boolean BigInteger BigDecimal]]
   (derive clazz ::do-not-convert))
 
+(defmacro ^{:private true} defnumber [box prim prim-getter]
+  `(let [conv# (fn [_# number#]
+                 (~(symbol (str box) "valueOf")
+                  (. number# ~prim-getter)))]
+     (.addMethod to-java [~prim Number] conv#)
+     (.addMethod to-java [~box Number] conv#)))
+
+(defmacro ^{:private true} defnumbers [& boxes]
+  (cons `do
+        (for [box boxes
+              :let [box-cls (resolve box)
+                    prim-cls (.get (.getField box-cls "TYPE")
+                                   box-cls)
+                    _ (assert (class? box-cls) (str box ": no class found"))
+                    _ (assert (class? prim-cls) (str box " has no TYPE field"))
+                    prim-getter (symbol (str (.getName prim-cls) "Value"))]]
+          `(defnumber ~box ~(symbol (str box) "TYPE") ~prim-getter))))
+
+(defnumbers Byte Short Integer Long Float Double)
+
 (defmethod from-java ::do-not-convert [value] value)
 (prefer-method from-java ::do-not-convert Object)
 
